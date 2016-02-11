@@ -18,7 +18,6 @@ function rayIntersectPolygon(P0, V, vertices, mvMatrix) {
 
     
     //Step 2: Compute the plane normal of the plane spanned by the transformed vertices
-    var N = getNormal(Vs);
     
     //Step 3: Perform ray intersect plane
     
@@ -67,6 +66,7 @@ function addImageSourcesFunctions(scene) {
                 if (mesh.faces[f] == excludeFace) {
                     continue;//Don't re-intersect with the face this point lies on
                 }
+                //Intersect the ray with this polygon
                 var res = rayIntersectPolygon(P0, V, mesh.faces[f].getVerticesPos(), mvMatrix);
                 if (!(res === null) && (res.t < tmin)) {
                     tmin = res.t;
@@ -77,12 +77,14 @@ function addImageSourcesFunctions(scene) {
         }
         
         if ('children' in node) {
-            //Recursively check the meshes of the children to make sure none
-            //of them intersect first
+            //Recursively check the meshes of the children to make sure the ray
+            //doesn't intersect any of them first
             for (var i = 0; i < node.children.length; i++) {
                 var nextmvMatrix = mat4.create();
-                //Multiply on the right by the next transformation
+                //Multiply on the right by the next transformation of the child
+                //node
                 mat4.mul(nextmvMatrix, mvMatrix, node.children[i].transform);
+                //Recursively intersect with the child node
                 var cres = scene.rayIntersectFaces(P0, V, node.children[i], nextmvMatrix, excludeFace);
                 if (!(cres === null) && (cres.tmin < tmin)) {
                     tmin = cres.tmin;
