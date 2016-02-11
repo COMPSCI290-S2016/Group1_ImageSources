@@ -1,9 +1,6 @@
 //Purpose: A file that holds the code that students fill in
 
 
-
-
-
 //Given a ray described by an initial point P0 and a direction V both in
 //world coordinates, check to see 
 //if it intersects the polygon described by "vertices," an array of vec3
@@ -18,12 +15,19 @@ function rayIntersectPolygon(P0, V, vertices, mvMatrix) {
     
     //Step 1: Make a new array of vec3s which holds "vertices" transformed 
     //to world coordinates (hint: vec3 has a function "transformMat4" which is useful)
+
     
     //Step 2: Compute the plane normal of the plane spanned by the transformed vertices
+    var N = getNormal(Vs);
     
     //Step 3: Perform ray intersect plane
     
+    
     //Step 4: Check to see if the intersection point is inside of the transformed polygon
+    //You can assume that the polygon is convex.  If you use the area test, you can
+    //allow for some wiggle room in the two areas you're comparing (e.g. absolute difference
+    //not exceeding 1e-4)
+    
     
     //Step 5: Return the intersection point if it exists or null if it's outside
     //of the polygon or if the ray is perpendicular to the plane normal (no intersection)
@@ -38,46 +42,31 @@ function addImageSourcesFunctions(scene) {
     //Setup all of the functions that students fill in that operate directly
     //on the scene
     
-    //Purpose: Fill in the array scene.imsources[] with a bunch of source
-    //objects.  It's up to you what you put in the source objects, but at
-    //the very least each object needs a field "pos" describing its position
-    //in world coordinates so that the renderer knows where to draw them
-    //You will certainly also need to save along pointers from an image source
-    //to its parent so that when you trace paths back you know where to aim
-    //Recursion is highly recommended here, since you'll be making images of 
-    //images of images (etc...) reflecting across polygon faces.
-    
-    //Inputs: order (int) : The maximum number of bounces to take
-    scene.computeImageSources = function(order) {
-        scene.source.order = 0;//Store an order field to figure out how many 
-        //bounces a particular image represents
-        scene.source.parent = null;//Keep track of the image source's parent
-        scene.source.genFace = null//Keep track of the mesh face that generated this image
-        //Remember not to reflect an image across the face that just generated it, 
-        //or you'll get its parent image
-        scene.imsources = [scene.source];
-        
-        //TODO: Fill the rest of this in.  
-        scene.computeImageSourcesRec(1, order);
-        console.log("There are " + scene.imsources.length + " images");
-    }    
-    
-    
-    //Purpose: A recursive function which helps to compute intersections of rays
-    //with faces in the scene, taking into consideration the scene graph structure
+    //Purpose: A recursive function provided which helps to compute intersections of rays
+    //with all faces in the scene, taking into consideration the scene graph structure
     //Inputs: P0 (vec3): Ray starting point, V (vec3): ray direction
     //node (object): node in scene tree to process, 
     //mvMatrix (mat4): Matrix to put geometry in this node into world coordinates
-    scene.rayIntersectFaces = function(P0, V, node, mvMatrix) {
+    //excludeFace: Pointer to face object to be excluded (don't intersect with
+    //the face that this point lies on)
+    //Returns: null if no intersection,
+    //{tmin:minimum t along ray, PMin(vec3): corresponding point, faceMin:Pointer to mesh face hit first}
+    
+    //NOTE: Calling this function with node = scene and an identity matrix for mvMatrix
+    //will start the recursion at the top of the scene tree in world coordinates
+    scene.rayIntersectFaces = function(P0, V, node, mvMatrix, excludeFace) {
         var tmin = Infinity;//The parameter along the ray of the nearest intersection
         var PMin = null;//The point of intersection corresponding to the nearest interesection
         var faceMin = null;//The face object corresponding to the nearest intersection
         if (node === null) {
-            return {tmin:tmin, PMin:PMin, faceMin:faceMin};
+            return null;
         }
         if ('mesh' in node) { //Make sure it's not just a dummy transformation node
             var mesh = node.mesh;
             for (var f = 0; f < mesh.faces.length; f++) {
+                if (mesh.faces[f] == excludeFace) {
+                    continue;//Don't re-intersect with the face this point lies on
+                }
                 var res = rayIntersectPolygon(P0, V, mesh.faces[f].getVerticesPos(), mvMatrix);
                 if (!(res === null) && (res.t < tmin)) {
                     tmin = res.t;
@@ -94,16 +83,48 @@ function addImageSourcesFunctions(scene) {
                 var nextmvMatrix = mat4.create();
                 //Multiply on the right by the next transformation
                 mat4.mul(nextmvMatrix, mvMatrix, node.children[i].transform);
-                var cres = scene.rayIntersectFaces(node.children[i], nextmvMatrix);
-                if (!(cres === null) && (cres.t < tmin)) {
-                    tmin = cres.t;
-                    PMin = cres.P;
+                var cres = scene.rayIntersectFaces(P0, V, node.children[i], nextmvMatrix, excludeFace);
+                if (!(cres === null) && (cres.tmin < tmin)) {
+                    tmin = cres.tmin;
+                    PMin = cres.PMin;
                     faceMin = cres.faceMin;
                 }
             }
         }
+        if (PMin === null) {
+            return null;
+        }
         return {tmin:tmin, PMin:PMin, faceMin:faceMin};
     }
+    
+    //Purpose: Fill in the array scene.imsources[] with a bunch of source
+    //objects.  It's up to you what you put in the source objects, but at
+    //the very least each object needs a field "pos" describing its position
+    //in world coordinates so that the renderer knows where to draw it
+    //You will certainly also need to save along pointers from an image source
+    //to its parent so that when you trace paths back you know where to aim
+    //Recursion is highly recommended here, since you'll be making images of 
+    //images of images (etc...) reflecting across polygon faces.
+    
+    //Inputs: order (int) : The maximum number of bounces to take
+    scene.computeImageSources = function(order) {
+        scene.source.order = 0;//Store an order field to figure out how many 
+        //bounces a particular image represents
+        scene.source.rcoeff = 1.0;//Keep track of the reflection coefficient of the node that
+        //gave rise to this source
+        scene.source.parent = null;//Keep track of the image source's parent
+        scene.source.genFace = null;//Keep track of the mesh face that generated this image
+        //Remember not to reflect an image across the face that just generated it, 
+        //or you'll get its parent image.  This information can also be used later
+        //when tracing back paths
+        scene.imsources = [scene.source];
+        
+        //TODO: Fill the rest of this in.  Be sure to reflect images across faces
+        //in world coordinates, not the faces in the original mesh coordinates
+        //See the "rayIntersectFaces" function above for an example of how to loop
+        //through faces in a mesh
+        
+    }    
     
     //Purpose: Based on the extracted image sources, trace back paths from the
     //receiver to the source, checking to make sure there are no occlusions
@@ -117,38 +138,32 @@ function addImageSourcesFunctions(scene) {
     //with the receiver and ending with the source.  Each object in each path
     //array should contain a field "pos" which describes the position, as well
     //as an element "rcoeff" which stores the reflection coefficient at that
-    //part of the path
+    //part of the path, which will be used to compute decays in "computeInpulseResponse()"
     //Don't forget the direct path from source to receiver!
     scene.extractPaths = function() {
         scene.paths = [];
-        //Start with the direct path, making sure there are no occlusions
-        var P0 = scene.receiver.pos;
-        var V = vec3.create();
-        vec3.subtract(V, scene.source.pos, scene.receiver.pos); //Ray points towards source
-        //Check to make sure there's nothing in the way
-        var mvMatrix = mat4.create(); //Start with identity matrix at root of scene tree
-        var res = scene.rayIntersectFaces(P0, V, scene, mvMatrix);
-        console.log("res = " + res);
-        if (res.faceMin === null || res.t > 1) { //Either it hit nothing or it hit something further away than the source
-            //There's nothing in the way, so add the direct path
-            //NOTE: scene.receiver and scene.source each already both have
-            //"pos" and "rcoeff" fields, but you'll need to make sure that
-            //other nodes in other paths have them
-            scene.paths.push([scene.receiver, scene.source]);
-        }
         
-        //TODO: Extract the rest of the paths by backtracing from the image
-        //sources you calculated.  Recursion is highly recommended
+        //TODO: Finish this. Extract the rest of the paths by backtracing from
+        //the image sources you calculated.  Return an array of arrays in
+        //scene.paths.  Recursion is highly recommended
+        //Each path should start at the receiver and end at the source
+        //(or vice versa), so scene.receiver should be the first element 
+        //and scene.source should be the last element of every array in 
+        //scene.paths
     }
     
     
     //Inputs: Fs: Sampling rate (samples per second)
     scene.computeImpulseResponse = function(Fs) {
         var SVel = 340;//Sound travels at 340 meters/second
-        //TODO: Finish this
-    }
-    
-    scene.convolveImpulsesWithSound = function() {
-        
+        //TODO: Finish this.  Be sure to scale each bounce by 1/(1+r^p), 
+        //where r is the length of the line segment of that bounce in meters
+        //and p is some integer less than 1 (make it smaller if you want the 
+        //paths to attenuate less and to be more echo-y as they propagate)
+        //Also be sure to scale by the reflection coefficient of each material
+        //bounce (you should have stored this in extractPaths() if you followed
+        //those directions).  Use some form of interpolation to spread an impulse
+        //which doesn't fall directly in a bin to nearby bins
+        //Save the result into the array scene.impulseResp[]
     }
 }

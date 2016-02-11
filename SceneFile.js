@@ -4,6 +4,8 @@
 ///////         SCENE LOADING CODE              //////////
 //////////////////////////////////////////////////////////
 
+var globalFs = 44100;//The global sampling rate of the loaded audio
+
 //Recursive function to load all of the meshes and to 
 //put all of the matrix transformations into mat4 objects
 function parseNode(node) {
@@ -65,7 +67,7 @@ function setupScene(scene, glcanvas) {
     if (T[0] == 0 && T[2] == 0) {
         //If it's a nonzero projection (one is right above the other on y)
         //Just go back to (0, 0, -1) as the towards direction
-        T[1] = 1;
+        T[2] = -1;
     }
     else {
         vec3.normalize(T, T);
@@ -86,6 +88,7 @@ function setupScene(scene, glcanvas) {
     //By default no paths and no image sources; user chooses when to compute
     scene.imsources = [scene.source];
     scene.paths = [];
+    scene.impulseResp = [];//Will hold the discrete impulse response
     
     //Add algorithm functions to this object
     addImageSourcesFunctions(scene);
@@ -98,7 +101,10 @@ function setupScene(scene, glcanvas) {
 function loadSceneFromFile(filename, glcanvas) {
     //Use d3 JSON parser to get the scene data in
     d3.json(filename, function(error, scene) {
-        if (error) throw error;
+        if (error) {
+            alert("Error parsing scene file.  Check your JSON syntax");
+            throw error;
+        }
         setupScene(scene, glcanvas);
         return scene;
     });
@@ -313,7 +319,7 @@ function SceneCanvas(glcanvas, shadersRelPath, pixWidth, pixHeight, scene) {
 		    //Rotate camera by mouse dragging
 		    this.camera.rotateLeftRight(-dX);
 		    this.camera.rotateUpDown(-dY);
-		    requestAnimFrame(this.repaint);
+		    requestAnimFrame(glcanvas.repaint);
 		}
 		return false;
     }
@@ -404,7 +410,32 @@ function SceneCanvas(glcanvas, shadersRelPath, pixWidth, pixHeight, scene) {
     }
 
     glcanvas.computeImpulseResponse = function() {
-        glcanvas.scene.computeImpulseResponse();
+        console.log("Computing impulse response");
+        //Step 1: Call student code
+        glcanvas.scene.computeImpulseResponse(globalFs);
+        if (scene.impulseResp.length == 0) {
+            return; //Student hasn't filled in yet.  Exit gracefully
+        }
+        
+        //Step 2: Plot the impulse response as a stem plot with milliseconds on the x-axis
+        //and magnitude on the y-axis
+        console.log("impulseResp.length = " + scene.impulseResp.length);
+        data = [];
+        for (var i = 0; i < scene.impulseResp.length; i++) {
+            var gamma = scene.impulseResp[i];
+            if (gamma > 0) {
+                data.push({x:[1000*i/globalFs, 1000*i/globalFs], y:[0, gamma], mode:'lines+markers'});
+            }
+        }
+        Plotly.newPlot('impulsePlot', data, {xaxis:{title:'Time (Milliseconds)'}, yaxis:{title:'Magnitude'}});
+        
+        //Step 3: Create a new audio buffer and copy over the data
+        //https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/createBuffer
+        impbuffer = context.createBuffer(1, scene.impulseResp.length, globalFs);
+        var impsamples = impbuffer.getChannelData(0);
+        for (var i = 0; i < scene.impulseResp.length; i++) {
+            impsamples[i] = scene.impulseResp[i];
+        }
         requestAnimFrame(glcanvas.repaint);
     }
 
