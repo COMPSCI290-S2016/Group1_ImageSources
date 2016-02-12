@@ -196,7 +196,9 @@ function SceneCanvas(glcanvas, shadersRelPath, pixWidth, pixHeight, scene) {
 	glcanvas.repaintRecurse = function(node, pMatrix, matrixIn) {
 	    var mvMatrix = mat4.create();
 	    mat4.mul(mvMatrix, matrixIn, node.transform);
-        node.mesh.render(glcanvas.gl, glcanvas.shaders, pMatrix, mvMatrix, glcanvas.ambientColor, glcanvas.light1Pos, glcanvas.light2Pos, glcanvas.lightColor, false, glcanvas.drawEdges, false, COLOR_SHADING);
+	    if ('mesh' in node) {
+            node.mesh.render(glcanvas.gl, glcanvas.shaders, pMatrix, mvMatrix, glcanvas.ambientColor, glcanvas.light1Pos, glcanvas.light2Pos, glcanvas.lightColor, false, glcanvas.drawEdges, false, COLOR_SHADING);
+        }
 		if ('children' in node) {
 		    for (var i = 0; i < node.children.length; i++) {
 		        glcanvas.repaintRecurse(node.children[i], pMatrix, mvMatrix);
